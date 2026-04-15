@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Enterprise SOC Dashboard</title>
+    
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <script src="{{ url_for('static', filename='js/chart.js') }}"></script>
+    
+    <script>
+        const savedTheme = localStorage.getItem('soc_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    </script>
+
+    <style>
+        /* ================= PASTEL AURORA THEME VARIABLES ================= */
+        :root {
+            /* Dark Mode (Deep Navy Base to make pastels glow) */
+            --bg-color: #161821;
+            
+            /* Soft Glowing Pastel Orbs */
+            --aurora-1: rgba(255, 179, 217, 0.45); /* Pastel Pink */
+            --aurora-2: rgba(179, 230, 255, 0.45); /* Pastel Blue */
+            --aurora-3: rgba(217, 179, 255, 0.45); /* Pastel Lavender */
+            
+            /* Highly Visible Glass Panels */
+            --panel-bg: rgba(28, 30, 42, 0.85); /* Much more solid */
+            --panel-border: rgba(255, 255, 255, 0.15); /* Thicker, brighter border */
+            --panel-hover: rgba(255, 255, 255, 0.2);
+            
+            --text-main: #f8fafc;
+            --text-muted: #aebfd4;
+            
+            /* Pastel Accent Colors */
+            --accent-primary: #7dd3fc; /* Soft Blue */
+            --accent-danger: #fda4af; /* Soft Red/Pink */
+            --accent-warning: #fde047; /* Soft Yellow */
+            --accent-success: #86efac; /* Soft Green */
+            
+            --card-shadow: 0 15px 35px 0 rgba(0, 0, 0, 0.5); /* Deeper shadow for lift */
+            --glow-shadow: 0 0 25px rgba(255, 255, 255, 0.05);
+        }
+
+        [data-theme="light"] {
+            /* Light Mode (Soft Off-White Base) */
+            --bg-color: #f8fafc;
+            
+            /* Brighter Light-Mode Pastels */
+            --aurora-1: rgba(255, 204, 229, 0.7); /* Soft Rose */
+            --aurora-2: rgba(204, 255, 204, 0.7); /* Soft Mint */
+            --aurora-3: rgba(255, 255, 204, 0.7); /* Soft Lemon */
+            
+            /* Crisp Light Panels */
+            --panel-bg: rgba(255, 255, 255, 0.9); /* Almost solid white */
+            --panel-border: rgba(0, 0, 0, 0.08); /* Darker subtle border */
+            --panel-hover: rgba(255, 255, 255, 1);
+            
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            
+            --accent-primary: #38bdf8;
+            
+            --card-shadow: 0 15px 35px 0 rgba(0, 0, 0, 0.08);
+            --glow-shadow: 0 0 20px rgba(0, 0, 0, 0.03);
+        }
+
+        /* ================= GLOBAL & AURORA ANIMATIONS ================= */
+        body { 
+            background-color: var(--bg-color); color: var(--text-main); 
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            min-height: 100vh; margin: 0; overflow-x: hidden;
+            transition: background-color 0.6s ease, color 0.6s ease;
+        }
+
+        body::before, body::after, .aurora-orb {
+            content: ''; position: fixed; border-radius: 50%;
+            filter: blur(120px); -webkit-filter: blur(120px); z-index: -1;
+            animation: float 20s infinite alternate ease-in-out; pointer-events: none;
+        }
+
+        body::before { width: 60vw; height: 60vh; background: var(--aurora-1); top: -10%; left: -10%; }
+        body::after { width: 50vw; height: 50vh; background: var(--aurora-2); bottom: -10%; right: -10%; animation-delay: -5s; }
+        .aurora-orb { width: 40vw; height: 40vh; background: var(--aurora-3); top: 30%; left: 30%; animation-delay: -10s; }
+
+        @keyframes float { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(5vw, 5vh) scale(1.1); } }
+
+        /* ================= ETHEREAL PANELS ================= */
+        .glass-panel {
+            background: var(--panel-bg); 
+            backdrop-filter: blur(40px); /* Increased blur so background doesn't muddy the text */
+            -webkit-backdrop-filter: blur(40px); 
+            border: 1px solid var(--panel-border);
+            box-shadow: var(--card-shadow), var(--glow-shadow); border-radius: 16px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-panel-header {
+            padding: 18px 24px; font-weight: 600; letter-spacing: 2px;
+            text-transform: uppercase; font-size: 0.85rem; color: var(--text-muted);
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        /* ================= RESPONSIVE SQUARE -> RECTANGLE MATH GRID ================= */
+        .overview-flex-container {
+            display: flex;
+            gap: 25px; 
+            width: 95vw; 
+            max-width: 1500px; 
+            height: calc((min(95vw, 1500px) - 75px) / 4);
+            margin: 200px auto 60px auto; 
+        }
+
+        .overview-card {
+            flex: 1; 
+            height: 100%; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            text-align: center;
+            border-radius: 28px;
+            border: 1px solid var(--panel-border);
+            transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1); 
+            overflow: hidden;
+            padding: 10px;
+            position: relative; 
+            z-index: 1;
+        }
+
+        .overview-card:hover {
+            flex: 3.5; 
+            transform: scale(1.05); /* Slightly less aggressive pop */
+            background: var(--panel-hover); 
+            border-color: rgba(255, 255, 255, 0.4);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), var(--glow-shadow);
+            z-index: 10; 
+        }
+
+        .overview-card .glass-panel-header {
+            border: none;
+            font-size: clamp(0.85rem, 1.4vw, 1.2rem); 
+            letter-spacing: 2px;
+            padding: 0;
+            margin-bottom: 15px;
+            transition: all 0.5s ease;
+            white-space: nowrap; 
+        }
+
+        .overview-card .stat-value {
+            font-size: clamp(3rem, 5vw, 5.5rem); 
+            font-weight: 300; /* Made slightly thicker for visibility */
+            transition: all 0.5s ease;
+            margin: 0;
+            line-height: 1;
+        }
+
+        .overview-card:hover .glass-panel-header {
+            font-size: clamp(1.2rem, 2vw, 1.6rem);
+            letter-spacing: 4px;
+            color: var(--text-main);
+            margin-bottom: 25px;
+        }
+
+        .overview-card:hover .stat-value {
+            font-size: clamp(4.5rem, 8vw, 9rem); 
+            font-weight: 400;
+        }
+
+        /* ================= NAVBAR & TABS ================= */
+        .navbar-custom {
+            border-bottom: 1px solid var(--panel-border); background: var(--panel-bg);
+            backdrop-filter: blur(40px); padding: 15px 30px; display: flex;
+            justify-content: space-between; align-items: center; margin-bottom: 25px;
+        }
+        .brand-title { font-size: 1.1rem; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; }
+        
+        .status-indicator {
+            display: inline-flex; align-items: center; gap: 10px;
+            background: transparent; border: 1px solid var(--panel-border);
+            padding: 8px 16px; border-radius: 30px;
+            font-size: 0.8rem; font-weight: 700; color: var(--accent-success);
+            letter-spacing: 1px; text-transform: uppercase;
+        }
+        .pulse-dot {
+            width: 8px; height: 8px; background-color: var(--accent-success);
+            border-radius: 50%; box-shadow: 0 0 12px var(--accent-success);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.5); } 100% { opacity: 1; transform: scale(1); } }
+
+        .tab-nav { display: flex; gap: 8px; margin-bottom: 30px; padding-bottom: 10px; overflow-x: auto; }
+        .tab-btn {
+            background: transparent; border: 1px solid transparent; color: var(--text-muted); padding: 10px 20px;
+            border-radius: 30px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; font-size: 0.85rem; letter-spacing: 1px;
+        }
+        .tab-btn:hover { color: var(--text-main); background: var(--panel-hover); }
+        .tab-btn.active { background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--accent-primary); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15); }
+
+        .tab-content { display: none; animation: subtleFade 0.4s ease; }
+        .tab-content.active { display: block; }
+        @keyframes subtleFade { from { opacity: 0; filter: blur(4px); transform: translateY(10px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
+
+        /* ================= BUTTONS & INPUTS ================= */
+        .btn-glass {
+            background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--text-main); padding: 8px 20px; border-radius: 30px;
+            font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; letter-spacing: 1px; text-transform: uppercase;
+        }
+        .btn-glass:hover { background: var(--panel-hover); box-shadow: var(--glow-shadow); transform: translateY(-2px); }
+        .btn-action { border-color: var(--accent-danger); color: var(--accent-danger); }
+        
+        .sensor-input {
+            background: var(--panel-bg); color: var(--text-main); border: 1px solid var(--panel-border);
+            font-size: 0.95rem; padding: 12px 20px; border-radius: 30px; width: 300px; transition: border-color 0.3s;
+        }
+        .sensor-input:focus { outline: none; border-color: var(--accent-primary); background: var(--panel-hover); }
+        .sensor-input::placeholder { color: var(--text-muted); font-weight: 400; }
+
+        /* ================= LAYOUT BOXES ================= */
+        .box-active-threats { max-height: 400px; overflow-y: auto; padding: 20px; }
+        .box-resolved { max-height: 400px; overflow-y: auto; padding: 20px; }
+        .box-main-log { height: 600px; overflow-y: auto; padding: 0; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 10px; }
+
+        /* ================= THREAT CARDS ================= */
+        .threat-card { 
+            background: var(--panel-bg); border: 1px solid var(--panel-border); 
+            margin-bottom: 15px; padding: 20px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; transition: transform 0.2s, background 0.3s;
+        }
+        .threat-card:hover { background: var(--panel-hover); transform: translateX(4px); }
+        
+        .badge-custom { font-size: 0.75rem; padding: 6px 12px; border-radius: 20px; font-weight: 700; letter-spacing: 1px; }
+        .badge-attacker { background: rgba(253, 164, 175, 0.15); color: var(--accent-danger); border: 1px solid rgba(253, 164, 175, 0.3); }
+        .badge-victim { background: rgba(125, 211, 252, 0.15); color: var(--accent-primary); border: 1px solid rgba(125, 211, 252, 0.3); }
+
+        .resolved-item { border-bottom: 1px solid var(--panel-border); padding: 15px 0; display: flex; justify-content: space-between; align-items: center; }
+
+        /* ================= TABLE ================= */
+        .glass-table { width: 100%; border-collapse: collapse; }
+        .glass-table th {
+            position: sticky; top: 0; z-index: 1; background: var(--bg-color);
+            color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 2px;
+            padding: 20px; text-align: left; border-bottom: 1px solid var(--panel-border);
+        }
+        .glass-table td { padding: 16px 20px; border-bottom: 1px solid var(--panel-border); font-size: 0.95rem; font-weight: 500; }
+        .glass-table tr:hover { background: var(--panel-hover); }
+        .col-time { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+        .col-ip { font-family: monospace; font-size: 1.05rem; letter-spacing: 0.5px; }
+    </style>
+</head>
+<body>
+    
+    <div class="aurora-orb"></div>
+
+    <nav class="navbar-custom">
+        <div style="display: flex; align-items: center; gap: 24px;">
+            <div class="brand-title">SOC Analytics Core</div>
+            <div class="status-indicator"><div class="pulse-dot"></div> System Online</div>
+        </div>
+        <div style="display: flex; gap: 15px;">
+            <button onclick="toggleTheme()" class="btn-glass">Toggle Theme</button>
+            <button onclick="resetLogs()" class="btn-glass btn-action">Clear Database</button>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4 pb-4">
+        
+        <div class="tab-nav">
+            <button class="tab-btn active" onclick="switchTab('home')">Overview</button>
+            <button class="tab-btn" onclick="switchTab('threats')">Incidents</button>
+            <button class="tab-btn" onclick="switchTab('traffic')">Telemetry Feed</button>
+            <button class="tab-btn" onclick="switchTab('sensors')">Sensor Nodes</button>
+            <button class="tab-btn" onclick="switchTab('distribution')">Attack Vectors</button>
+        </div>
+
+        <div id="tab-home" class="tab-content active">
+            <div class="overview-flex-container">
+                
+                <div class="glass-panel overview-card" onclick="switchTab('threats')">
+                    <div class="glass-panel-header">Active Threats</div>
+                    <div class="stat-value" id="stat-active" style="color: {{ 'var(--accent-danger)' if stats.active > 0 else 'var(--accent-primary)' }}">{{ stats.active }}</div>
+                </div>
+                
+                <div class="glass-panel overview-card" onclick="switchTab('threats')">
+                    <div class="glass-panel-header">Critical Events</div>
+                    <div class="stat-value" id="stat-critical" style="color: var(--accent-danger)">{{ stats.critical }}</div>
+                </div>
+                
+                <div class="glass-panel overview-card" onclick="switchTab('sensors')">
+                    <div class="glass-panel-header">Active Sensors</div>
+                    <div class="stat-value" id="stat-sensors" style="color: var(--text-main);">{{ stats.online_count }}</div>
+                </div>
+                
+                <div class="glass-panel overview-card" onclick="switchTab('traffic')">
+                    <div class="glass-panel-header">Total Logs</div>
+                    <div class="stat-value" id="stat-total" style="color: var(--text-main);">{{ stats.total }}</div>
+                </div>
+
+            </div>
+        </div>
+
+        <div id="tab-threats" class="tab-content">
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="glass-panel">
+                        <div class="glass-panel-header" style="color: var(--text-main);">Priority Alerts</div>
+                        <div class="box-active-threats" id="box-active-threats">
+                            </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="glass-panel">
+                        <div class="glass-panel-header">Resolved Incidents</div>
+                        <div class="box-resolved" id="box-resolved">
+                             </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-traffic" class="tab-content">
+            <div class="glass-panel">
+                <div class="glass-panel-header">Network Telemetry Feed</div>
+                <div class="box-main-log">
+                    <table class="glass-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th><th>Status</th><th>Classification</th>
+                                <th>Source Node</th><th>Target Node</th><th>Rate (pps)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="box-logs">
+                             </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-sensors" class="tab-content">
+            <div class="glass-panel p-5">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
+                    <h4 style="margin: 0; font-weight: 600; letter-spacing: 1px;">Monitored Sensor Nodes</h4>
+                    <input type="text" id="sensorSearch" onkeyup="filterSensors()" placeholder="Filter by IP Address..." class="sensor-input">
+                </div>
+                <div class="row" id="sensorGrid">
+                     </div>
+            </div>
+        </div>
+
+        <div id="tab-distribution" class="tab-content">
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <div class="glass-panel" style="height: 100%;">
+                        <div class="glass-panel-header">Historical Attack Distribution</div>
+                        <div style="padding: 30px; height: 500px;">
+                            <canvas id="attackChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 mb-4">
+                    <div class="glass-panel mb-4">
+                        <div class="glass-panel-header">Attack Velocity Over Time</div>
+                        <div style="padding: 20px; height: 280px;">
+                            <canvas id="timeChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-panel">
+                        <div class="glass-panel-header">Identified Attacker Profiles</div>
+                        <div class="box-active-threats" id="attacker-profiles-list" style="height: 195px; overflow-y: auto; padding: 0 20px;">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- 1. Core Tab Logic ---
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+            document.querySelector(`.tab-btn[onclick="switchTab('${tabId}')"]`).classList.add('active');
+            localStorage.setItem('soc_active_tab', tabId);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        switchTab(localStorage.getItem('soc_active_tab') || 'home');
+
+        function filterSensors() {
+            let input = document.getElementById('sensorSearch').value.toLowerCase();
+            let cards = document.getElementsByClassName('sensor-card');
+            for (let i = 0; i < cards.length; i++) {
+                let ip = cards[i].getAttribute('data-ip').toLowerCase();
+                cards[i].style.display = ip.includes(input) ? "block" : "none";
+            }
+        }
+
+        function toggleTheme() {
+            const root = document.documentElement;
+            const currentTheme = root.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            root.setAttribute('data-theme', newTheme);
+            localStorage.setItem('soc_theme', newTheme);
+            
+            const isLight = newTheme === 'light';
+            const textColor = isLight ? '#64748b' : '#aebfd4';
+            
+            if(window.myChart) {
+                window.myChart.options.plugins.legend.labels.color = textColor;
+                window.myChart.update();
+            }
+            if(window.timeChart) {
+                window.timeChart.options.scales.x.ticks.color = textColor;
+                window.timeChart.options.scales.y.ticks.color = textColor;
+                window.timeChart.update();
+            }
+        }
+
+        // --- 2. Action Logic ---
+        function resolveThreat(ip) {
+            fetch('/api/resolve', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({source_ip: ip})
+            }).then(() => fetchDashboardData()); 
+        }
+
+        function resetLogs() { 
+            if(confirm("Confirm database purge?")) {
+                fetch('/api/reset', {method: 'POST'}).then(() => fetchDashboardData()); 
+            }
+        }
+
+        // --- 3. Chart Setup (Updated for Pastel Colors) ---
+        const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+        const textColor = isLight ? '#64748b' : '#aebfd4';
+
+        // Doughnut Chart - Pastel Palette Update
+        const ctxDoughnut = document.getElementById('attackChart').getContext('2d');
+        window.myChart = new Chart(ctxDoughnut, {
+            type: 'doughnut',
+            data: { labels: [], datasets: [{ data: [], backgroundColor: ['#fda4af', '#fde047', '#86efac', '#7dd3fc', '#c4b5fd'], borderWidth: 0, hoverOffset: 4 }] },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '80%', plugins: { legend: { position: 'bottom', labels: { color: textColor, padding: 20, font: { family: 'system-ui', size: 12, weight: '500' } } } } }
+        });
+
+        // Line Chart - Pastel Palette Update
+        const ctxLine = document.getElementById('timeChart').getContext('2d');
+        window.timeChart = new Chart(ctxLine, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Traffic Rate (pps)', data: [], borderColor: '#7dd3fc', backgroundColor: 'rgba(125, 211, 252, 0.15)', fill: true, tension: 0.4, borderWidth: 3, pointRadius: 2 }] },
+            options: { 
+                responsive: true, maintainAspectRatio: false, 
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: textColor }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { ticks: { color: textColor, beginAtZero: true, precision: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                } 
+            }
+        });
+
+        // --- 4. Background Fetching Logic ---
+        function fetchDashboardData() {
+            fetch('/api/dashboard_data')
+                .then(response => response.json())
+                .then(data => {
+                    // Update Top Stats
+                    document.getElementById('stat-active').innerText = data.stats.active;
+                    document.getElementById('stat-active').style.color = data.stats.active > 0 ? 'var(--accent-danger)' : 'var(--accent-primary)';
+                    document.getElementById('stat-critical').innerText = data.stats.critical;
+                    document.getElementById('stat-sensors').innerText = data.stats.online_count;
+                    document.getElementById('stat-total').innerText = data.stats.total;
+
+                    // Update Active Threats Box
+                    let threatsHTML = data.active_threats.length > 0 ? data.active_threats.map(t => `
+                        <div class="threat-card">
+                            <div>
+                                <strong style="font-size: 1.1em; display:block; margin-bottom: 12px; font-weight: 600;">${t.attack_type}</strong>
+                                <span class="badge-custom badge-attacker">SRC: ${t.source_ip}</span>
+                                <span class="badge-custom badge-victim">TGT: ${t.victim_ip}</span>
+                                <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 15px; font-weight: 500;">Rate: ${t.traffic_rate} pps | Logged: ${t.timestamp}</div>
+                            </div>
+                            <button onclick="resolveThreat('${t.source_ip}')" class="btn-glass">Resolve</button>
+                        </div>
+                    `).join('') : '<div class="text-center py-5" style="color: var(--text-muted); font-weight: 500;">No active threats. Operations normal.</div>';
+                    document.getElementById('box-active-threats').innerHTML = threatsHTML;
+
+                    // Update Resolved Box
+                    let resolvedHTML = data.resolved_threats.length > 0 ? data.resolved_threats.map(l => `
+                        <div class="resolved-item">
+                            <div>
+                                <div style="font-weight: 600; margin-bottom: 6px; font-size: 0.95rem;">${l.attack_type}</div>
+                                <span class="badge-custom badge-attacker" style="border-color: transparent; background: transparent; color: var(--text-muted); padding: 0;">${l.source_ip}</span>
+                            </div>
+                            <div class="text-end">
+                                <small style="color: var(--accent-success); font-weight: 600; letter-spacing: 1px;">RESOLVED</small><br>
+                                <small style="color: var(--text-muted);">${l.timestamp}</small>
+                            </div>
+                        </div>
+                    `).join('') : '<div class="text-center mt-4" style="color: var(--text-muted); font-weight: 500;">No incident history.</div>';
+                    document.getElementById('box-resolved').innerHTML = resolvedHTML;
+
+                    // Update Live Traffic Table
+                    let logsHTML = data.logs.length > 0 ? data.logs.map(log => `
+                        <tr>
+                            <td class="col-time">${log.timestamp}</td>
+                            <td><span style="color: ${log.severity === 'CRITICAL' ? 'var(--accent-danger)' : log.severity === 'WARNING' ? 'var(--accent-warning)' : 'var(--accent-success)'}; font-weight: 700; letter-spacing: 1px;">${log.severity === 'CRITICAL' ? 'CRITICAL' : log.severity === 'WARNING' ? 'WARNING' : 'NORMAL'}</span></td>
+                            <td style="font-weight: 600;">${log.attack_type}</td>
+                            <td class="col-ip" style="color: var(--accent-danger);">${log.source_ip}</td>
+                            <td class="col-ip" style="color: var(--accent-primary);">${log.victim_ip}</td>
+                            <td class="col-time">${log.traffic_rate}</td>
+                        </tr>
+                    `).join('') : '<tr><td colspan="6" class="text-center py-5" style="color: var(--text-muted); font-weight: 500;">Awaiting network telemetry...</td></tr>';
+                    document.getElementById('box-logs').innerHTML = logsHTML;
+
+                    // Update Active Sensors Grid
+                    let sensorsHTML = data.online_sensors.length > 0 ? data.online_sensors.map(ip => `
+                        <div class="col-md-3 mb-4 sensor-card" data-ip="${ip}">
+                            <div class="glass-panel p-4 text-center">
+                                <div style="color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; font-weight: 600;">Sensor IP</div>
+                                <div style="font-family: monospace; font-size: 1.3rem; margin-bottom: 20px; font-weight: 600; color: var(--text-main);">${ip}</div>
+                                <span class="badge-custom" style="background: rgba(134, 239, 172, 0.15); color: var(--accent-success); border: 1px solid rgba(134, 239, 172, 0.3);">ONLINE</span>
+                            </div>
+                        </div>
+                    `).join('') : '<div class="text-muted text-center w-100 py-4 font-weight-500">No active sensors detected on the network.</div>';
+                    document.getElementById('sensorGrid').innerHTML = sensorsHTML;
+
+                    // Update Chart Data Dynamically
+                    if(window.myChart) {
+                        window.myChart.data.labels = data.chart_labels;
+                        window.myChart.data.datasets[0].data = data.chart_data;
+                        window.myChart.update();
+                    }
+
+                    if(window.timeChart && data.logs.length > 0) {
+                        const recentLogs = [...data.logs].reverse().slice(-30);
+                        window.timeChart.data.labels = recentLogs.map(l => l.timestamp);
+                        window.timeChart.data.datasets[0].data = recentLogs.map(l => l.traffic_rate);
+                        window.timeChart.update();
+                    }
+
+                    // Build Identified Attacker Profiles List (Strictly filters out NORMAL traffic)
+                    const uniqueAttackers = {};
+                    data.logs.forEach(log => {
+                        if (log.severity === 'CRITICAL' || log.severity === 'WARNING') {
+                            if(!uniqueAttackers[log.source_ip]) {
+                                uniqueAttackers[log.source_ip] = log.attack_type;
+                            }
+                        }
+                    });
+                    
+                    const attackerProfilesHTML = Object.keys(uniqueAttackers).length > 0 ? Object.entries(uniqueAttackers).map(([ip, type]) => `
+                        <div class="resolved-item" style="padding: 12px 0;">
+                            <div style="font-family: monospace; font-size: 1.15rem; color: var(--accent-danger); letter-spacing: 1px; font-weight: 600;">${ip}</div>
+                            <div style="font-weight: 500; color: var(--text-muted);">${type}</div>
+                        </div>
+                    `).join('') : '<div class="text-muted text-center mt-4 font-weight-500">No active attacker profiles identified.</div>';
+                    
+                    document.getElementById('attacker-profiles-list').innerHTML = attackerProfilesHTML;
+                });
+        }
+
+        // Fetch data immediately on page load, then every 3 seconds
+        fetchDashboardData();
+        setInterval(fetchDashboardData, 3000);
+    </script>
+</body>
+</html>
